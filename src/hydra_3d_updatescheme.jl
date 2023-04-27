@@ -17,7 +17,7 @@ function UpdateShape(Sphere::Spheroid, Psivals::Vector{Float64}=Sphere.Psivals; 
     Loud && EnergyFunctional(xvec, Sphere.Triangles, Psivals, Loud=true)
     Nodes= xvec2Nodes(xvec)
     Sphere = Spheroid(Nodes, Sphere.Triangles, Psivals)
-    Loud && display(ShowPsi(Sphere))
+    Loud && display(Show(Sphere))
     Loud && println("Updating the shape took $(time() - t0) seconds")
     return Sphere
 end

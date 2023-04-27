@@ -1,7 +1,7 @@
 """
     Plot the concentration Ψ across the spheroid. Color each face by averaging Ψ on the vertices. 
 """
-function ShowPsi(spher::Spheroid; col=cgrad(:thermal))
+function Show(spher::Spheroid; col=cgrad(:thermal))
     Points = Point3[Nodes2Points(spher.Nodes)...]
     Triangles = spher.Triangles
 
@@ -175,7 +175,7 @@ function AnimateSimulation(Sim::Simulation; col=cgrad(:thermal), PlotInterval::I
             push!(Rvals, sqrt(x^2+y^2+z^2))
             push!(anglestemp, Point2([acos(z/Rvals[end]), sign(y)*acos(x/sqrt(x^2+y^2))]))
         end
-        angles[] = anglestemp
+        angles[] = anglestemp 
         sc.plot.color = Rvals
 
         trun[] = [t-2, t-2]

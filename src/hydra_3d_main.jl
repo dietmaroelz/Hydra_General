@@ -123,7 +123,7 @@ psiStep(theta, phi) = abs((theta-π/2)) < π/8 ? 0.0 : 1.0
 psivalsStep = [mean(psiStep(Node2angle(Nodes, n)...) for n in Tri) for Tri in Sphere0.Triangles];
 SphereStep = Spheroid(Sphere0.Nodes, Sphere0.Triangles, psivalsStep)
 
-""" Initially set Ψ as a small random number to test for instantaneous pattern formation """
+""" Initially set Ψ as a random number to test for spontaneous pattern formation, this should be improved to be discretisation-independant, e.g. divide the (θ, ϕ) domain into ragions, and allocate each region a random value """
 psiRandom(theta, phi) = rand()
 psivalsRandom = [mean(psiRandom(Node2angle(Nodes, n)...) for n in Tri) for Tri in Sphere0.Triangles];
 SphereRandom = Spheroid(Sphere0.Nodes, Sphere0.Triangles, psivalsRandom)
