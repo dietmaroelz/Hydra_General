@@ -1,19 +1,6 @@
 """ automatic differentiation to find the spatial derivatives of the energy functional for a configuration specified by x"""
 gradEnergy(x, Triangles, Psivals; args...) = ForwardDiff.gradient(x::Vector->EnergyFunctional(x::Vector, Triangles, Psivals), x)
 
-""" Find the gradient corresponding to the Phi update using the deformation calculated by comparing Sphere to Sphere0. An alternate method specifies the current configuration by a Nodes matrix rather than Sphere """
-function GradientPsi(psivals::Vector{Float64}, Sphere::Spheroid, Spher0::Spheroid)
-    @assert Sphere.Triangles == Spher0.Triangles
-    return GradientPsi(psivals, Sphere.Nodes, Spher0)
-end
-GradientPsi(psivals::Vector{Float64}, xvec::Vector{Float64}, Spher0::Spheroid) = GradientPsi(psivals, xvec2Nodes(xvec), Spher0)
-
-function GradientPsi(psivals::Vector{Float64}, Nodes::Matrix{Float64}, Spher0::Spheroid; n=10, K=2.0)
-    FaceStretching = StretchingEnergies(Spher0, Nodes)
-    # return zeros(length(psivals))
-    # return σ0*FaceStretching.^n./(K^n .+ FaceStretching.^n) - α*psivals
-    return σ0*FaceStretching - α*psivals
-end
 
 
 """ Find the total gradient of a configuration as opposed to the reference configuration Spher0"""
@@ -48,11 +35,9 @@ function mainODE(Sphere::Spheroid, T::Float64; Sphere0::Spheroid=Sphere)
     tspan = (0., T)
     x0vec = Nodes2xvec(Sphere.Nodes)
     f(u, p, t) = -gradEnergy(u, Sphere0.Triangles, Sphere.Psivals)
-    # prob = SteadyStateProblem(f, x0vec, tspan)
     prob = ODEProblem(f, x0vec, tspan)
     # prob = ODEProblem(gradEnergyPsi!, x0vec, tspan)
     sol = solve(prob, Tsit5())
-    # sol = solve(prob, DynamicSS(Tsit5()))
     println("Solution took $(round(time() - t0, digits=2)) seconds")
     return ODESimulation([Spheroid(xvec2Nodes(sol.u[j][1:3noNodes]), Sphere.Triangles, Sphere.Psivals) for j in 1:length(sol)], sol.t, time()-t0);
 end
