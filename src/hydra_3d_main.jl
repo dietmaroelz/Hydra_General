@@ -23,30 +23,32 @@ import Main.length
 import Main.show
 
 const R = 1 #sphere initial radius
-const η = 10.0 #Volume preservation
-const κ0 = 50.0 #modulate contractility
-const σ0 = 1.0 #chemical secretion rate
+const η = 100.0 #Volume preservation
+const κ0 = 5.0 #modulate contractility
+const κ1 = 50.0
+const σ0 = 20.0 #chemical secretion rate
 const ξ = 1.0 #Nodewise friction parameter
-const α = 2.0 #chemical decay rate
+const α = 1.0 #chemical decay rate
 const β = 5.0 #Poisson ratio of medium
 
 const V0sphere = 4π*R^3/3
 const A0sphere = 4π*R^2
 
-function kappa(Ψ)
-    return κ0*exp(-β*Ψ)
-end
+kappa(Ψ) = κ1*exp(-β*Ψ) + κ0
+
 
 include("hydra_3d_auxillary.jl") #contains various helper functions, as well as spheroid definition
 
 """
-    struct to store a simulation, Spherevec is a vector of Spheroidal configurations (user-defiend object), tvec is the time corresponding to each configuration and RunTime is the computation time needed to run the simulation 
+    struct to store a simulation, Spherevec is a vector of Spheroidal configurations (user-defined object), tvec is the time corresponding to each configuration and RunTime is the computation time needed to run the simulation 
 """
-struct ODESimulation
+struct Simulation
     Spherevec::Vector{Spheroid}
     tvec::Vector{Float64}
+    V0vec::Vector{Float64}
     RunTime::Float64
 end
+length(Sim::Simulation) = length(Sim.Spherevec)
 
 """
     Load in one of the pre-assembled meshes of a sphere and convert it into a Spheroid compatible with this code
@@ -74,14 +76,29 @@ const noNodes = size(Sphere0.Nodes)[1]
 include("hydra_3d_plotting.jl") #various plotting and visualisation helper functions
 include("hydra_3d_stretch_energy.jl") #evaluating the Green's strain energy density for 2D objects
 include("hydra_3d_energy.jl") #energy functional to implement EOM's
-include("hydra_3d_gradientdescent_decoupled.jl") #Includes gradient-descent functionality
+include("hydra_3d_updatescheme.jl") #Implement the energy minisation into simulation structs
+# include("hydra_3d_gradientdescent.jl") #Includes gradient-descent functionality, currently I'm working with the energy minisation scheme for simplicity
 
 const V0numeric = SphereVolume(Sphere0) #numerical volume of discretised sphere, for coarse discretisations this won't well approximate 4πR^3/3, so the numerical version is used as the basis
-const V0target = V0numeric*1.2 #target volume
+const V0target = V0numeric*1.5 #target volume
 const Areas0numeric = FaceAreas(Sphere0) #original area of each triangle, used to define strain energy
 const S0numeric = sum(Areas0numeric) #total unperturbed surface area (discretised)
 
 psivals0 = zeros(noNodes)
+
+""" Find the gradient corresponding to the Phi update using the deformation calculated by comparing Sphere to Sphere0. An alternate method specifies the current configuration by a Nodes matrix rather than Sphere """
+function GradientPsi(psivals::Vector{Float64}, Sphere::Spheroid, Spher0::Spheroid)
+    @assert Sphere.Triangles == Spher0.Triangles
+    return GradientPsi(psivals, Sphere.Nodes, Spher0)
+end
+GradientPsi(psivals::Vector{Float64}, xvec::Vector{Float64}, Spher0::Spheroid) = GradientPsi(psivals, xvec2Nodes(xvec), Spher0)
+
+function GradientPsi(psivals::Vector{Float64}, Nodes::Matrix{Float64}, Spher0::Spheroid; n=10, K=2.0)
+    FaceStretching = StretchingEnergies(Spher0, Nodes)
+    # return zeros(length(psivals))
+    # return σ0*FaceStretching.^n./(K^n .+ FaceStretching.^n) - α*psivals
+    return σ0*FaceStretching - α*psivals
+end
 
 """
     Return the θ, ϕ coordinate of a position in R³
@@ -92,56 +109,41 @@ function Node2angle(x, y, z)
 end
 Node2angle(Nodes, i) = Node2angle(Nodes[i,:]...)
 
-
-"""
-    Chemistry as a linear 'hat' function centred at (θ, ϕ) = (π/2, π)
-"""
-function psi1(theta, phi)
-    # return max(1.5-abs(theta-π/2),0) * max(1.5-abs(phi-π),0)
-    return max(1.5-theta, 0.0)
-end
-
-psivals1 = [mean(psi1(Node2angle(Nodes, n)...) for n in Tri) for Tri in Sphere0.Triangles];
-Spher1 = Spheroid(Sphere0.Nodes, Sphere0.Triangles, psivals1)
-
-
 """ Set concentration uniformly Ψ=1 everywhere"""
-psivals2 = ones(length(Sphere0.Triangles));
-Spher2 = Spheroid(Sphere0.Nodes, Sphere0.Triangles, psivals2)
-
-""" A more extreme version of the hat function psi1"""
-function psi3(theta, phi)
-    return max(2.5-abs(theta-π/2),0) * max(2.5-abs(phi-π),0)
-end
-psivals3 = [mean(psi3(Node2angle(Nodes, n)...) for n in Tri) for Tri in Sphere0.Triangles];
-Sphere3 = Spheroid(Sphere0.Nodes, Sphere0.Triangles, psivals3)
+psiUniform = ones(length(Sphere0.Triangles));
+SphereUniform = Spheroid(Sphere0.Nodes, Sphere0.Triangles, psiUniform)
 
 """ A psi function with smooth variance along θ, used to create a dumbbell """
-function psi4(theta, phi)
-    return min(abs(π/2-theta), 1.0)
-end
-psivals4 = [mean(psi4(Node2angle(Nodes, n)...) for n in Tri) for Tri in Sphere0.Triangles];
-Sphere4 = Spheroid(Sphere0.Nodes, Sphere0.Triangles, psivals4)
+psiSmooth(theta, phi) = min(abs(π/2-theta), 1.0)
+psivalsSmooth = [mean(psiSmooth(Node2angle(Nodes, n)...) for n in Tri) for Tri in Sphere0.Triangles];
+SphereSmooth = Spheroid(Sphere0.Nodes, Sphere0.Triangles, psivalsSmooth)
 
 """ A psi function with Ψ as a step function along θ, best for creating a dumbbell"""
-function psi5(theta, phi)
-    return abs((theta-π/2)) < π/8 ? 0.0 : 1.0
-end
-psivals5 = [mean(psi5(Node2angle(Nodes, n)...) for n in Tri) for Tri in Sphere0.Triangles];
-Sphere5 = Spheroid(Sphere0.Nodes, Sphere0.Triangles, psivals5)
+psiStep(theta, phi) = abs((theta-π/2)) < π/8 ? 0.0 : 1.0
+psivalsStep = [mean(psiStep(Node2angle(Nodes, n)...) for n in Tri) for Tri in Sphere0.Triangles];
+SphereStep = Spheroid(Sphere0.Nodes, Sphere0.Triangles, psivalsStep)
 
 """ Initially set Ψ as a small random number to test for instantaneous pattern formation """
-function psi6(theta, phi)
-    return rand()/3
-end
-psivals6 = [mean(psi6(Node2angle(Nodes, n)...) for n in Tri) for Tri in Sphere0.Triangles];
-Spher6 = Spheroid(Sphere0.Nodes, Sphere0.Triangles, psivals6)
+psiRandom(theta, phi) = rand()
+psivalsRandom = [mean(psiRandom(Node2angle(Nodes, n)...) for n in Tri) for Tri in Sphere0.Triangles];
+SphereRandom = Spheroid(Sphere0.Nodes, Sphere0.Triangles, psivalsRandom)
 
+psiMonopole(theta, phi) = theta<π/2 ? 1.0 : 0.0
+psivalsMonopole = [mean(psiMonopole(Node2angle(Nodes, n)...) for n in Tri) for Tri in Sphere0.Triangles];
+SphereMonopole = Spheroid(Sphere0.Nodes, Sphere0.Triangles, psivalsMonopole)
+
+psiDimple(theta, phi) = theta<π/4 ? 1.0 : 0.0
+psivalsDimple = [mean(psiDimple(Node2angle(Nodes, n)...) for n in Tri) for Tri in Sphere0.Triangles];
+SphereDimple = Spheroid(Sphere0.Nodes, Sphere0.Triangles, psivalsDimple)
+
+psiCosine(theta, phi) = 0.5 + cos(3theta)/2
+psivalsCosine = [mean(psiCosine(Node2angle(Nodes, n)...) for n in Tri) for Tri in Sphere0.Triangles];
+SphereCosine = Spheroid(Sphere0.Nodes, Sphere0.Triangles, psivalsCosine)
 
 """
     Save a run into our data file
 """
-function SaveData(data::Union{Spheroid, ODESimulation}, filename::String)
+function SaveData(data::Union{Spheroid, Simulation}, filename::String)
     @assert !isfile("data\\$filename.jld2") "A file already exists with that name"
     save("data\\$filename.jld2", "s", data)
 end
