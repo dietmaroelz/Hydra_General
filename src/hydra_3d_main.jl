@@ -16,7 +16,7 @@ using Loess
     Loads a data file created by SaveRun and appends it to the global vectors in the current workspace. 
 """
 function LoadData(Name::String)
-    return load("data\\"*Name*".jld2")["s"]
+    return load(joinpath("data", Name*".jld2"))["s"]
 end
 
 import Main.length
